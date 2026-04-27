@@ -1,0 +1,8 @@
+{
+  "name": "VigilAi",
+  "description": "Software di analisi video AI per il monitoraggio in tempo reale di rapine e atti violenti con sistema di allarme automatico.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
+}

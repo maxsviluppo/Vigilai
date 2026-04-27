@@ -1,0 +1,68 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Montserrat", sans-serif;
+  --font-sans: "Montserrat", sans-serif;
+  --font-display: "Montserrat", sans-serif;
+  
+  --color-bg: #050a18;
+  --color-surface: rgba(10, 15, 30, 0.7);
+  --color-accent: #f8f9fa;
+  --color-danger: #ff3b30;
+  --color-secondary: #94a3b8;
+  --color-border: rgba(255, 255, 255, 0.08);
+  
+  --radius-xs: 8px;
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 20px;
+  --radius-xl: 32px;
+}
+
+@layer base {
+  body {
+    @apply text-accent font-sans antialiased font-normal min-h-screen text-slate-100;
+    background: radial-gradient(circle at top center, #101d42 0%, #050a18 100%);
+    background-attachment: fixed;
+  }
+
+  /* Prevent auto-zoom on mobile inputs */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
+@layer components {
+  .section-title {
+    @apply font-sans font-bold text-[11px] uppercase tracking-[0.25em] text-secondary/80 mb-5;
+  }
+  
+  .glass {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10;
+  }
+  
+  .btn-action {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10 px-5 py-2.5 text-[11px] uppercase tracking-[0.15em] cursor-pointer transition-all hover:bg-white/10 font-bold rounded-full;
+  }
+  
+  .btn-active {
+    @apply bg-danger/90 border-transparent text-white hover:bg-danger shadow-[0_0_15px_rgba(255,59,48,0.3)];
+  }
+
+  .card-modern {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10 shadow-2xl;
+  }
+}
+
+@layer utilities {
+  .neon-blue {
+    color: #fff;
+    text-shadow: 
+      0 0 5px #fff,
+      0 0 10px #fff,
+      0 0 20px #00d2ff,
+      0 0 30px #3a7bd5,
+      0 0 40px #3a7bd5;
+  }
+}
