@@ -13,7 +13,8 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 export const analyzeFrame = async (
   base64Image: string, 
   triggers: AlertTrigger[] = ["intrusion", "violence"],
-  location: string = "Area monitorata"
+  location: string = "Area monitorata",
+  modelId: string = "gemini-1.5-flash"
 ): Promise<DetectionResult> => {
   try {
     // Clean base64 data if it contains the prefix
@@ -44,13 +45,16 @@ export const analyzeFrame = async (
     CRITERIO EMERGENZA (isEmergency=true): Rapina (volto coperto e armi), violenza in corso, o fiamme.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: {
-        parts: [
-          { inlineData: { mimeType: "image/jpeg", data: cleanBase64 } },
-          { text: prompt }
-        ]
-      },
+      model: modelId,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { inlineData: { mimeType: "image/jpeg", data: cleanBase64 } },
+            { text: prompt }
+          ]
+        }
+      ],
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -63,13 +67,10 @@ export const analyzeFrame = async (
           },
           required: ["threatLevel", "detectedEvents", "description", "isEmergency"],
         },
-        safetySettings: [
-          { category: "HARM_CATEGORY_HARASSMENT" as any, threshold: "BLOCK_NONE" as any },
-          { category: "HARM_CATEGORY_HATE_SPEECH" as any, threshold: "BLOCK_NONE" as any },
-          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT" as any, threshold: "BLOCK_NONE" as any },
-          { category: "HARM_CATEGORY_DANGEROUS_CONTENT" as any, threshold: "BLOCK_NONE" as any },
-        ]
-      }
+      },
+      // Safety settings are part of config in this SDK
+      // but the tool-chain often expects them at top level or inside config.
+      // According to skill, it's just model, contents, and config.
     });
 
     const text = response.text;

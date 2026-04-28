@@ -53,6 +53,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showPlans, setShowPlans] = useState(false);
   const [showCameraModal, setShowCameraModal] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
   const [editingCamera, setEditingCamera] = useState<Camera | null>(null);
   const [isNightMode, setIsNightMode] = useState(false);
   const [notificationEmails, setNotificationEmails] = useState<string[]>(["castromassimo@gmail.com"]);
@@ -65,6 +66,15 @@ export default function App() {
   const [probeResult, setProbeResult] = useState<{success: boolean, message: string} | null>(null);
   const [proxyImages, setProxyImages] = useState<Map<string, string>>(new Map());
   const [proxyErrors, setProxyErrors] = useState<Map<string, string>>(new Map());
+  const [aiModel, setAiModel] = useState(() => localStorage.getItem("vigilAiModel") || "gemini-1.5-flash");
+  const [analysisFrequency, setAnalysisFrequency] = useState(() => Number(localStorage.getItem("vigilAiFreq")) || 10);
+  const [analysisCount, setAnalysisCount] = useState(() => Number(localStorage.getItem("vigilAiCount")) || 0);
+
+  useEffect(() => {
+    localStorage.setItem("vigilAiModel", aiModel);
+    localStorage.setItem("vigilAiFreq", analysisFrequency.toString());
+    localStorage.setItem("vigilAiCount", analysisCount.toString());
+  }, [aiModel, analysisFrequency, analysisCount]);
   
   const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -373,8 +383,11 @@ export default function App() {
       }
 
       setIsAnalyzing(true);
-      const result = await analyzeFrame(base64Image, cam.enabledTriggers, cam.location);
+      const result = await analyzeFrame(base64Image, cam.enabledTriggers, cam.location, aiModel);
       
+      // Update counter
+      setAnalysisCount(prev => prev + 1);
+
       // Update global feedback only if it's the active cam or is critical
       if (cam.id === activeCameraId || result.isEmergency) {
         setLastAnalysis(result);
@@ -436,17 +449,16 @@ export default function App() {
   useEffect(() => {
     if (isMonitoring) {
       startCameras();
-      // Use a slightly longer interval (6s) to ensure we stay well within RPM limits
-      analysisIntervalRef.current = setInterval(captureAndAnalyze, 6000); 
+      // Use dynamic interval from settings
+      analysisIntervalRef.current = setInterval(captureAndAnalyze, analysisFrequency * 1000); 
     } else {
       stopCameras();
       if (analysisIntervalRef.current) clearInterval(analysisIntervalRef.current);
     }
     return () => {
-      stopCameras();
       if (analysisIntervalRef.current) clearInterval(analysisIntervalRef.current);
     };
-  }, [isMonitoring, captureAndAnalyze]);
+  }, [isMonitoring, captureAndAnalyze, analysisFrequency]);
 
   const addIPCamera = (name: string, url: string) => {
     const newCam: Camera = {
@@ -465,7 +477,7 @@ export default function App() {
     setEditingCamera(cam ? {
       ...cam,
       onvif: cam.onvif || {
-        active: false,
+        active: true,
         user: "admin",
         password: "",
         port: 8000
@@ -479,7 +491,7 @@ export default function App() {
       status: "online",
       enabledTriggers: ["intrusion", "violence"],
       onvif: {
-        active: false,
+        active: true,
         user: "admin",
         password: "",
         port: 8000
@@ -530,9 +542,25 @@ export default function App() {
   return (
     <div className="min-h-screen text-accent font-sans selection:bg-danger/30 flex flex-col p-4 lg:p-6 gap-6 overflow-hidden">
       {/* Header */}
-      <header className="h-[72px] glass px-8 flex items-center justify-between sticky top-0 z-50 rounded-2xl shadow-2xl">
-        <div className="flex items-center gap-8">
-          <h1 className="logo font-display font-bold text-2xl tracking-[0.15em] neon-blue">VIGIL.AI</h1>
+      <header className="min-h-[72px] py-4 glass px-4 sm:px-8 flex flex-col sm:flex-row items-center justify-between sticky top-0 z-50 rounded-2xl shadow-2xl gap-4 sm:gap-0">
+        <div className="flex items-center justify-between w-full sm:w-auto gap-4">
+          <h1 className="logo font-display font-bold text-xl sm:text-2xl tracking-[0.12em] neon-blue shrink-0">VIGIL.AI</h1>
+          
+          <div className="flex sm:hidden gap-2 shrink-0">
+             <button 
+              onClick={toggleMonitoring}
+              className={`w-11 h-11 flex items-center justify-center glass rounded-full transition-all ${isMonitoring ? 'bg-danger shadow-lg' : 'bg-white/5 opacity-80'}`}
+            >
+              {isMonitoring ? <VideoOff size={18} /> : <Video size={18} className="text-secondary" />}
+            </button>
+            <button 
+              onClick={() => setShowSettings(!showSettings)}
+              className="w-11 h-11 glass rounded-full flex items-center justify-center transition-all text-secondary"
+            >
+              <Settings size={18} />
+            </button>
+          </div>
+
           <div className="hidden xl:flex items-center gap-8 text-[10px] font-bold uppercase tracking-[2px] text-secondary/60">
             <div className="flex items-center gap-2">
               <span className={`w-2 h-2 rounded-full shadow-[0_0_10px_rgba(76,175,80,0.5)] ${isMonitoring ? 'bg-[#4CAF50]' : 'bg-secondary'}`}></span>
@@ -557,33 +585,33 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="hidden sm:flex items-center gap-2 lg:gap-3">
           <button 
             onClick={() => setShowPlans(true)}
-            className="hidden md:flex items-center gap-2 px-4 py-2 bg-accent/5 hover:bg-accent/10 rounded-full transition-all border border-accent/10 group active:scale-95"
+            className="hidden lg:flex items-center gap-2 px-4 py-2 bg-accent/5 hover:bg-accent/10 rounded-full transition-all border border-accent/10 group active:scale-95 shrink-0"
           >
             <div className="w-2 h-2 rounded-full bg-accent animate-pulse"></div>
             <span className="text-[10px] font-black uppercase tracking-widest text-accent">Piani & Prezzi</span>
           </button>
-          <div className="h-8 w-px bg-white/10 mx-2 hidden sm:block"></div>
+          <div className="h-8 w-px bg-white/10 mx-1 hidden lg:block"></div>
           <button 
             onClick={() => setIsMultiView(!isMultiView)}
-            className={`p-3 glass rounded-full hover:scale-110 active:scale-95 transition-all ${isMultiView ? 'text-blue-400 border-blue-400/30' : 'text-secondary'}`}
+            className={`p-3 glass rounded-full hover:scale-110 active:scale-95 transition-all shrink-0 ${isMultiView ? 'text-blue-400 border-blue-400/30' : 'text-secondary'}`}
             title="Toggle Grid View"
           >
             <Monitor size={18} />
           </button>
           <button 
             onClick={toggleMonitoring}
-            className={`btn-action h-11 flex items-center gap-2 px-6 ${isMonitoring ? 'bg-white/5 border-white/20' : 'btn-active'}`}
+            className={`btn-action h-11 flex items-center gap-2 px-4 lg:px-6 shrink-0 ${isMonitoring ? 'bg-white/5 border-white/20' : 'btn-active'}`}
           >
             {isMonitoring ? (
-              <><VideoOff size={16} /> Disattiva</>
+              <><VideoOff size={16} /> <span className="hidden xl:inline">Disattiva</span></>
             ) : (
-              <><Video size={16} /> Attiva Allarme</>
+              <><Video size={16} /> <span className="hidden xl:inline">Attiva Allarme</span></>
             )}
           </button>
-          <div className="h-8 w-px bg-white/10 mx-2 hidden sm:block"></div>
+          <div className="h-8 w-px bg-white/10 mx-1 hidden sm:block"></div>
           <button 
             onClick={() => setIsNightMode(!isNightMode)}
             className={`p-3 rounded-full transition-all glass hover:scale-110 active:scale-95 ${isNightMode ? 'text-blue-400 border-blue-400/30' : 'text-secondary'}`}
@@ -607,65 +635,67 @@ export default function App() {
           </button>
           <button 
             onClick={() => setShowSettings(!showSettings)}
-            className="p-3 glass rounded-full hover:scale-110 active:scale-95 transition-all text-secondary"
+            className="w-10 h-10 glass rounded-full flex items-center justify-center hover:scale-110 active:scale-95 transition-all text-secondary"
           >
             <Settings size={18} />
           </button>
         </div>
       </header>
 
-      <main className="flex-1 grid grid-cols-1 lg:grid-cols-[280px_1fr_320px] gap-6 min-h-0">
+      <main className="flex-1 grid grid-cols-1 lg:grid-cols-[280px_1fr_320px] gap-6 min-h-0 overflow-y-auto lg:overflow-visible no-scrollbar">
         {/* Left Column: Camera Sources */}
-        <section className="glass rounded-3xl p-8 flex flex-col gap-8 order-2 lg:order-1 overflow-hidden">
-          <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
+        <section className="glass gradient-sidebar rounded-3xl p-8 flex flex-col gap-8 order-2 lg:order-1 overflow-hidden">
+          <div className="flex-1 overflow-y-auto no-scrollbar pr-2">
             <h3 className="section-title">SORVEGLIANZA</h3>
             <div className="space-y-2">
               {cameras.map(cam => (
                 <div key={cam.id} className="relative group">
                   <button
-                    onClick={() => setActiveCameraId(cam.id)}
-                    className={`w-full p-4 rounded-xl flex flex-col gap-1 text-left transition-all duration-300 border ${
+                    onClick={() => {
+                      setActiveCameraId(cam.id);
+                      openCameraConfig(cam);
+                    }}
+                    className={`w-full p-4 rounded-xl flex flex-col gap-1 text-left transition-all duration-300 border relative group/btn ${
                       activeCameraId === cam.id 
                         ? 'bg-white/10 border-white/20 shadow-lg translate-x-1' 
                         : 'border-transparent hover:bg-white/5 opacity-60 hover:opacity-100'
                     }`}
                   >
-                    <div className="flex justify-between items-start">
-                      <span className="text-[13px] font-bold text-white">{cam.name}</span>
-                      <div className="flex gap-1">
+                    <div className="flex flex-col sm:flex-row justify-between items-start w-full gap-2 sm:gap-0 pr-8 sm:pr-0">
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[12px] sm:text-[13px] font-black text-white uppercase tracking-tight flex items-center gap-2">
+                          {cam.name}
+                          <Settings size={10} className="text-secondary/40 group-hover/btn:text-accent transition-colors" />
+                        </span>
+                        <span className="font-mono text-[8px] text-secondary tracking-widest uppercase opacity-60">
+                          {cam.location || (cam.type === 'webcam' ? 'LOCAL_STREAM' : 'REMOTE_STREAM')}
+                        </span>
+                      </div>
+                      <div className="flex gap-1 flex-wrap">
                         {cam.enabledTriggers.slice(0, 2).map((t, i) => (
-                          <span key={i} className="text-[7px] px-1 py-0.5 rounded bg-white/5 border border-white/10 uppercase tracking-tighter text-blue-400">
+                          <span key={i} className="text-[7px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 uppercase tracking-tighter font-black text-blue-400">
                             {t === 'violence' ? 'SCUR' : t === 'fire' ? 'FIRE' : t === 'smoke' ? 'SMOK' : t.slice(0, 4)}
                           </span>
                         ))}
-                        {cam.enabledTriggers.length > 2 && <span className="text-[7px] text-secondary">+{cam.enabledTriggers.length - 2}</span>}
                       </div>
                     </div>
-                    <span className="font-mono text-[9px] text-secondary tracking-widest uppercase">
-                      {cam.location || (cam.type === 'webcam' ? 'LOCAL_STREAM' : 'REMOTE_STREAM')}
-                    </span>
                   </button>
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); openCameraConfig(cam); }}
-                      className="p-1.5 glass rounded-lg hover:bg-white/20 text-secondary hover:text-white"
-                    >
-                      <Settings size={12} />
-                    </button>
-                    {cameras.length > 1 && (
+                  {cameras.length > 1 && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button 
                         onClick={(e) => { e.stopPropagation(); removeCamera(cam.id); }}
-                        className="p-1.5 glass rounded-lg hover:bg-danger/20 text-secondary hover:text-danger"
+                        className="w-8 h-8 flex items-center justify-center glass rounded-lg hover:bg-danger/20 text-secondary hover:text-danger transition-all"
+                        title="Rimuovi Camera"
                       >
                         <Trash2 size={12} />
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               ))}
               <button 
                 onClick={() => openCameraConfig()}
-                className="w-full p-4 flex items-center justify-center gap-3 text-[10px] text-secondary font-bold hover:text-accent transition-all uppercase tracking-widest border border-dashed border-white/10 rounded-xl hover:bg-white/5 active:scale-95 mt-4"
+                className="w-full p-4 flex items-center justify-center gap-3 text-[10px] text-secondary font-black hover:text-accent transition-all uppercase tracking-widest border border-dashed border-white/10 rounded-xl hover:bg-white/5 active:scale-95 mt-4"
               >
                 <Plus size={14} /> Nuova Camera
               </button>
@@ -791,11 +821,6 @@ export default function App() {
                     </div>
                   </div>
                 </div>
-                
-                {/* HUD Scanning Line */}
-                {isMonitoring && (
-                  <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-blue-400/20 to-transparent animate-scan pointer-events-none" />
-                )}
               </div>
             ))}
 
@@ -850,9 +875,9 @@ export default function App() {
         </section>
 
         {/* Right Column: Events Log */}
-        <section className="glass rounded-3xl p-8 flex flex-col order-3 lg:order-3 overflow-hidden">
+        <section className="glass neon-section rounded-3xl p-8 flex flex-col order-3 lg:order-3 overflow-hidden">
           <h3 className="section-title">LOG EVENTI</h3>
-          <div className="flex-1 space-y-4 overflow-y-auto custom-scrollbar pr-3">
+          <div className="flex-1 space-y-4 overflow-y-auto no-scrollbar pr-3">
             {incidents.length === 0 ? (
               <div className="py-24 text-center">
                 <History size={40} className="mx-auto mb-4 text-secondary/20" />
@@ -901,15 +926,15 @@ export default function App() {
               initial={{ scale: 0.9, y: 20, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.9, y: 20, opacity: 0 }}
-              className="glass bg-slate-900/60 rounded-[40px] w-full max-w-2xl overflow-hidden shadow-2xl border-white/5"
+              className="glass bg-slate-900/60 rounded-[32px] md:rounded-[40px] w-full max-w-2xl max-h-[85vh] md:max-h-[90vh] overflow-y-auto shadow-2xl border border-white/5 no-scrollbar"
             >
-              <div className="p-10 space-y-8">
+              <div className="p-6 md:p-10 space-y-8">
                 <div className="flex justify-between items-center">
                   <div>
                     <h2 className="text-2xl font-black text-white uppercase tracking-tight">Impostazioni</h2>
                     <p className="text-[10px] font-black uppercase tracking-[0.3em] text-secondary/60 mt-1">Configurazione Vigil.AI</p>
                   </div>
-                  <button onClick={() => setShowSettings(false)} className="p-3 glass rounded-full hover:bg-white/10 transition-all">
+                  <button onClick={() => setShowSettings(false)} className="w-10 h-10 glass rounded-full flex items-center justify-center hover:bg-white/10 transition-all">
                     <History size={20} className="rotate-45" />
                   </button>
                 </div>
@@ -964,13 +989,16 @@ export default function App() {
                        <Bell size={14} /> Destinatari Notifiche
                     </h4>
                     
-                    <div className="flex gap-2">
+                    <div className="relative group/input">
+                      <div className="absolute left-4 top-1/2 -translate-y-1/2 text-secondary/30 group-focus-within/input:text-accent transition-colors">
+                        <Plus size={14} />
+                      </div>
                       <input 
                         type="email" 
                         value={newEmail}
                         onChange={(e) => setNewEmail(e.target.value)}
-                        placeholder="aggiungi email..."
-                        className="flex-1 bg-white/5 border border-white/10 px-4 py-3 text-xs rounded-xl focus:border-white/30 outline-none transition-all"
+                        placeholder="Aggiungi email destinatario..."
+                        className="w-full bg-white/5 border border-white/10 pl-10 pr-12 py-3 text-[11px] rounded-xl focus:border-white/20 outline-none transition-all placeholder:text-secondary/30"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && newEmail) {
                             if (!notificationEmails.includes(newEmail)) {
@@ -987,19 +1015,19 @@ export default function App() {
                             setNewEmail("");
                           }
                         }}
-                        className="p-3 glass rounded-xl hover:bg-white/10 text-accent transition-all"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-accent/10 hover:bg-accent/20 text-accent text-[9px] font-black uppercase tracking-widest rounded-lg transition-all"
                       >
-                        <Plus size={16} />
+                        Add
                       </button>
                     </div>
 
-                    <div className="space-y-2 max-h-[120px] overflow-y-auto custom-scrollbar pr-2">
+                    <div className="space-y-2 max-h-[160px] overflow-y-auto no-scrollbar pt-2">
                       {notificationEmails.map((email, idx) => (
                         <div key={idx} className="flex items-center justify-between bg-white/5 px-3 py-2 rounded-lg border border-white/5 group">
                           <span className="text-[10px] text-white/80 font-medium truncate">{email}</span>
                           <button 
                             onClick={() => setNotificationEmails(notificationEmails.filter(e => e !== email))}
-                            className="text-secondary hover:text-danger opacity-0 group-hover:opacity-100 transition-all"
+                            className="text-secondary hover:text-danger opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all p-2"
                           >
                             <Trash2 size={12} />
                           </button>
@@ -1008,6 +1036,98 @@ export default function App() {
                       {notificationEmails.length === 0 && (
                         <p className="text-[10px] text-secondary/40 italic text-center py-2">Nessun destinatario impostato</p>
                       )}
+                    </div>
+                  </div>
+
+                  {/* AI CORE CONFIG & COSTS */}
+                  <div className="bg-white/5 rounded-3xl p-6 border border-white/5 space-y-6 md:col-span-2">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-blue-500/20 p-2 rounded-lg"><Zap size={16} className="text-blue-400" /></div>
+                      <h3 className="text-xs font-black uppercase text-white">AI Core Engine & Performance</h3>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                       <div className="space-y-4">
+                         <div className="space-y-2">
+                            <label className="text-[9px] font-black uppercase tracking-widest text-white/50 px-1">Modello Vision</label>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {[
+                                { id: "gemini-1.5-flash", name: "v1.5 Flash", desc: "Bilanciato & Veloce" },
+                                { id: "gemini-2.0-flash-exp", name: "v2.0 Elite", desc: "Precisione Massima" }
+                              ].map(m => (
+                                <button
+                                  key={m.id}
+                                  onClick={() => setAiModel(m.id)}
+                                  className={`p-3 rounded-xl border text-left transition-all ${aiModel === m.id ? 'bg-blue-500/20 border-blue-500' : 'bg-white/5 border-white/10'}`}
+                                >
+                                  <div className="text-[10px] font-bold text-white uppercase">{m.name}</div>
+                                  <div className="text-[8px] text-white/40">{m.desc}</div>
+                                </button>
+                              ))}
+                            </div>
+                         </div>
+
+                         <div className="space-y-3">
+                           <div className="flex justify-between items-end px-1">
+                             <label className="text-[9px] font-black uppercase tracking-widest text-white/50">Frequenza Scansione</label>
+                             <span className="text-[10px] font-bold text-blue-400">{analysisFrequency} secondi</span>
+                           </div>
+                           <input 
+                             type="range" 
+                             min="2" 
+                             max="10" 
+                             step="1"
+                             value={analysisFrequency}
+                             onChange={(e) => setAnalysisFrequency(Number(e.target.value))}
+                             className="w-full h-1 bg-white/10 appearance-none cursor-pointer accent-blue-500 rounded-full" 
+                           />
+                           <div className="flex justify-between text-[8px] text-white/20 font-black uppercase px-2">
+                             <span>Turbo (2s)</span>
+                             <span>Standard (10s)</span>
+                           </div>
+                         </div>
+                       </div>
+
+                       <div className="bg-slate-950/40 rounded-2xl p-5 border border-white/5 space-y-4">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                             <p className="text-[9px] font-black uppercase text-white/40 tracking-wider">Tariffa Mensile Stimata</p>
+                             <div className="px-2 py-1 bg-green-500/10 rounded-md">
+                               <p className="text-[12px] font-black text-green-400">
+                                 €{(aiModel.includes("2.0") ? (40/analysisFrequency * 10) : (20/analysisFrequency * 10)).toFixed(2)}
+                                 <span className="text-[8px] text-white/40 ml-1">/mese</span>
+                               </p>
+                             </div>
+                          </div>
+                          <div className="h-px bg-white/5" />
+                          <div className="space-y-6">
+                             <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                               <div>
+                                 <p className="text-[8px] font-black uppercase text-white/30">Totale Analisi Eseguite</p>
+                                 <p className="text-xl font-black text-white tracking-tighter mt-0.5">{analysisCount.toLocaleString()}</p>
+                               </div>
+                               <button 
+                                 onClick={() => setShowResetModal(true)}
+                                 className="px-4 py-2 bg-danger/10 hover:bg-danger/20 border border-danger/20 text-danger text-[9px] font-black uppercase rounded-lg transition-all"
+                                >
+                                 Reset Contatore
+                               </button>
+                             </div>
+                             <div className="flex gap-4">
+                               <div className="flex-1 space-y-1">
+                                 <div className="w-full h-1 bg-blue-500/10 rounded-full overflow-hidden">
+                                    <div className="h-full bg-blue-500 w-[65%]" />
+                                 </div>
+                                 <p className="text-[8px] text-white/20 uppercase font-bold">Infrastruttura: Online</p>
+                               </div>
+                               <div className="flex-1 space-y-1">
+                                 <div className="w-full h-1 bg-green-500/10 rounded-full overflow-hidden">
+                                    <div className="h-full bg-green-500 w-[92%]" />
+                                 </div>
+                                 <p className="text-[8px] text-white/20 uppercase font-bold">Affidabilità AI: 99.8%</p>
+                               </div>
+                             </div>
+                          </div>
+                       </div>
                     </div>
                   </div>
 
@@ -1048,22 +1168,6 @@ export default function App() {
 
       {/* Global CSS for custom layouts */}
       <style>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: #0a0f1d;
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #000000;
-          border-radius: 10px;
-          border: 1.5px solid #0a0f1d;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #111111;
-        }
-
         @keyframes scan {
           0% { top: 0; }
           100% { top: 100%; }
@@ -1112,7 +1216,7 @@ export default function App() {
                     <h2 className="text-2xl font-black text-white uppercase tracking-tight">Diagnostica Rete Casa</h2>
                     <p className="text-[10px] font-black uppercase tracking-[0.3em] text-secondary/60 mt-1">Perché la tua telecamera non è visibile esternamente</p>
                   </div>
-                  <button onClick={() => setShowNetworkHelper(false)} className="bg-white/5 p-3 rounded-full hover:bg-white/10 transition-all">
+                  <button onClick={() => setShowNetworkHelper(false)} className="bg-white/5 w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/10 transition-all">
                     <X size={20} className="text-white" />
                   </button>
                 </div>
@@ -1228,7 +1332,7 @@ export default function App() {
               initial={{ scale: 0.9, y: 20, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.9, y: 20, opacity: 0 }}
-              className="glass bg-slate-900/60 rounded-[40px] w-full max-w-lg max-h-[85vh] overflow-y-auto custom-scrollbar shadow-2xl border-white/5"
+              className="glass bg-slate-900/60 rounded-[40px] w-full max-w-lg max-h-[85vh] overflow-y-auto no-scrollbar shadow-2xl border-white/5"
             >
               <div className="p-10 space-y-8">
                 <div>
@@ -1490,11 +1594,11 @@ export default function App() {
               initial={{ scale: 0.95, y: 50, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.95, y: 50, opacity: 0 }}
-              className="w-full max-w-6xl max-h-[90vh] overflow-y-auto custom-scrollbar glass bg-slate-900/40 rounded-[40px] p-10 md:p-14 relative shadow-2xl border-white/5"
+              className="w-full max-w-6xl max-h-[90vh] overflow-y-auto no-scrollbar glass bg-slate-900/40 rounded-[40px] p-10 md:p-14 relative shadow-2xl border-white/5"
             >
               <button 
                 onClick={() => setShowPlans(false)}
-                className="absolute right-8 top-8 p-3 glass rounded-full hover:bg-white/10 transition-all text-secondary hover:text-white"
+                className="absolute right-8 top-8 w-12 h-12 glass rounded-full flex items-center justify-center hover:bg-white/10 transition-all text-secondary hover:text-white"
               >
                 <Plus size={24} className="rotate-45" />
               </button>
@@ -1624,6 +1728,50 @@ export default function App() {
                   <span className="text-[9px] font-bold text-white/40 uppercase tracking-widest">Soddisfatti o Rimborsati 14gg</span>
                 </div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-secondary/30 ml-auto hidden lg:block">Aggiornamenti AI costanti inclusi.</p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Reset Confirmation Modal */}
+      <AnimatePresence>
+        {showResetModal && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="fixed inset-0 z-[200] bg-slate-950/90 backdrop-blur-3xl flex items-center justify-center p-6"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="glass bg-slate-900 border border-white/5 rounded-[32px] p-8 max-w-sm w-full text-center space-y-6"
+            >
+              <div className="w-16 h-16 bg-danger/10 text-danger rounded-full flex items-center justify-center mx-auto mb-4 border border-danger/20">
+                <Trash2 size={32} />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-white uppercase tracking-tight">Vuoi azzerare tutto?</h3>
+                <p className="text-xs text-secondary mt-2 px-4">Questa azione resetterà il contatore delle analisi eseguite a zero. Non è possibile tornare indietro.</p>
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setShowResetModal(false)}
+                  className="flex-1 py-4 glass text-[10px] font-black uppercase text-white rounded-2xl hover:bg-white/10 transition-all"
+                >
+                  Indietro
+                </button>
+                <button 
+                  onClick={() => {
+                    setAnalysisCount(0);
+                    setShowResetModal(false);
+                  }}
+                  className="flex-1 py-4 bg-danger text-[10px] font-black uppercase text-white rounded-2xl hover:bg-danger/80 transition-all shadow-lg shadow-danger/20"
+                >
+                  Conferma Reset
+                </button>
               </div>
             </motion.div>
           </motion.div>
